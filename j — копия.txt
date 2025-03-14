@@ -1,0 +1,14 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=windows-1251"/>
+<title>Robot NAO</title>
+</head>
+<body>
+<h1>NAO - assssss</h1>
+<p>Robot can do everything.
+<br>
+<img src="nao.jpeg">
+</p>
+<p> <a href="nao_group.jpeg">and more</a></p>
+</body>
+</html>
