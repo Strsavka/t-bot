@@ -90,7 +90,7 @@ async def class_asking(updater, context):
             cursor.execute('''UPDATE users SET (class, letter_of_class) = (?, ?) WHERE telegram_id = ?''',
                            (user_class[0], user_class[1].lower(), updater.message.chat.id))
             connection.commit()
-            await updater.message.reply_text('Отлично', reply_markup=markup_menu)
+            await updater.message.reply_text(f'Класс изменён на {user_class[0]} {user_class[1]}', reply_markup=markup_menu)
             return ConversationHandler.END
         else:
             await updater.message.reply_text('Некорректный ввод, попробуйте ещё раз, цифру, букву, через пробел, '
@@ -139,7 +139,7 @@ async def getting_date(updater, context):  # Function to get date and to ask sub
             if homework.class_of_user is None or homework.letter_of_class is None:
                 await updater.message.reply_text('У вас не указан класс, поэтому напиши цифру класса и букву класса '
                                                  'через пробел')
-                return 7
+                return 1
         if new_date.weekday() == 6:
             await updater.message.reply_text('Выходной, введите другую дату')
             return 2
@@ -166,7 +166,7 @@ async def class_asking_in_dialog(updater, context):
         else:
             await updater.message.reply_text('Некорректный ввод, попробуйте ещё раз, цифру, букву, через пробел, '
                                              'в русской раскладке')
-            return 7
+            return 1
     except Exception as e:
         await error(updater, context, e)
 
@@ -199,44 +199,53 @@ async def asking_homework(updater, context):  # Function to get homework and to 
 async def get(updater, context):  # Command function to start downloading_homework_handler
     await updater.message.reply_text('Напишите за какое число вы бы хотели получить дз', reply_markup=markup_stop)
     await updater.message.reply_text('Пишите через дату в формате ДД.ММ.ГГГГ')
-    return 5
+    return 2
 
 
 async def getting_date_to_get(updater, context):  # Function to get date and to ask subject
     try:
         global data
-        string_date = updater.message.text.split('.')
-        if len(string_date) != 3:
-            raise Exception
-        new_date = dt.date(int(string_date[2]), int(string_date[1]), int(string_date[0]))
-        homework.date = (int(string_date[0]), int(string_date[1]), int(string_date[2]))
-        # user_class = cursor.execute('''SELECT class, letter_of_class FROM users WHERE telegram_id = ?''',
-        #                             (updater.message.chat.id,)).fetchall()
-        # lessons = list(map(lambda x: [KeyboardButton(x[0])], data[user_class[0]][user_class[1]][new_date.weekday()]))
+        if updater.message.text == 'Продолжить':
+            new_date = dt.date(homework.date[2], homework.date[1], homework.date[0])
+        else:
+            string_date = updater.message.text.split('.')
+            if len(string_date) != 3:
+                raise Exception
+            new_date = dt.date(int(string_date[2]), int(string_date[1]), int(string_date[0]))
+            homework.date = (int(string_date[0]), int(string_date[1]), int(string_date[2]))
+
+            user_class = cursor.execute('''SELECT class, letter_of_class FROM users WHERE telegram_id = ?''',
+                                        (updater.message.chat.id,)).fetchall()
+            homework.class_of_user, homework.letter_of_class = user_class[0][0], user_class[0][1]
+
+            if homework.class_of_user is None or homework.letter_of_class is None:
+                await updater.message.reply_text('У вас не указан класс, поэтому напиши цифру класса и букву класса '
+                                                 'через пробел')
+                return 1
         if new_date.weekday() == 6:
             await updater.message.reply_text('Выходной, введите другую дату')
-            return 5
+            return 2
         else:
             lessons = data[int(new_date.weekday())]
-            await updater.message.reply_text('Отлично, теперь выберите урок на который хотите получить дз',
+            await updater.message.reply_text('Отлично, теперь выберите урок на который запланировано дз',
                                              reply_markup=ReplyKeyboardMarkup(lessons))
-            return 6
+            return 3
     except Exception as e:
         print(e)
         await updater.message.reply_text('Некорректная дата')
         await updater.message.reply_text('Попробуйте ещё раз')
-        return 5
+        return 2
 
 
 async def asking_subject_to_get(updater, context):  # Function to get subject and to download homework and to send it
     try:
         homework.subject = updater.message.text
-        user_class = cursor.execute('''SELECT class, letter_of_class FROM users WHERE telegram_id = ?''',
-                                    (updater.message.chat.id,)).fetchall()
+        print(homework.date[0], homework.date[1], homework.date[2], homework.class_of_user, homework.letter_of_class,
+              homework.subject)
         downloaded_homework = cursor.execute('''SELECT homework FROM homework WHERE date = ? and month = ? and year = ? 
         and class = ? and letter_of_class = ? and subject = ?''', (homework.date[0], homework.date[1],
-                                                                   homework.date[2], user_class[0][0], user_class[0][1],
-                                                                   homework.subject)).fetchone()
+                                                                   homework.date[2], homework.class_of_user,
+                                                                   homework.letter_of_class, homework.subject)).fetchone()
         print(downloaded_homework)
         if downloaded_homework is None:
             raise NoHomeworkError
@@ -272,7 +281,7 @@ def initialization():  # Starting function
     uploading_homework_handler = ConversationHandler(
         entry_points=[CommandHandler('send', send)],
         states={2: [MessageHandler(filters.TEXT & ~filters.COMMAND, getting_date)],
-                7: [MessageHandler(filters.TEXT & ~filters.COMMAND, class_asking_in_dialog)],
+                1: [MessageHandler(filters.TEXT & ~filters.COMMAND, class_asking_in_dialog)],
                 3: [MessageHandler(filters.TEXT & ~filters.COMMAND, asking_subject)],
                 4: [MessageHandler(filters.TEXT & ~filters.COMMAND, asking_homework)]},
         fallbacks=[CommandHandler('stop', stop)]
@@ -281,8 +290,9 @@ def initialization():  # Starting function
     # A handler for getting homework from database
     downloading_homework_handler = ConversationHandler(
         entry_points=[CommandHandler('get', get)],
-        states={5: [MessageHandler(filters.TEXT & ~filters.COMMAND, getting_date_to_get)],
-                6: [MessageHandler(filters.TEXT & ~filters.COMMAND, asking_subject_to_get)]},
+        states={2: [MessageHandler(filters.TEXT & ~filters.COMMAND, getting_date_to_get)],
+                1: [MessageHandler(filters.TEXT & ~filters.COMMAND, class_asking_in_dialog)],
+                3: [MessageHandler(filters.TEXT & ~filters.COMMAND, asking_subject_to_get)]},
         fallbacks=[CommandHandler('stop', stop)]
     )
 
