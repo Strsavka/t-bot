@@ -86,12 +86,17 @@ async def class_asking(updater, context):
     # Getting class of user and rewrite if needed
     try:
         user_class = updater.message.text.split()
-        if user_class[0] in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] and user_class[1].lower() in 'абвм':
-            cursor.execute('''UPDATE users SET (class, letter_of_class) = (?, ?) WHERE telegram_id = ?''',
-                           (user_class[0], user_class[1].lower(), updater.message.chat.id))
-            connection.commit()
-            await updater.message.reply_text(f'Класс изменён на {user_class[0]} {user_class[1]}', reply_markup=markup_menu)
-            return ConversationHandler.END
+        if user_class[0] in data.keys():
+            if user_class[1] in data[user_class[0]]:
+                cursor.execute('''UPDATE users SET (class, letter_of_class) = (?, ?) WHERE telegram_id = ?''',
+                               (user_class[0], user_class[1].lower(), updater.message.chat.id))
+                connection.commit()
+                await updater.message.reply_text(f'Класс изменён на {user_class[0]} {user_class[1]}', reply_markup=markup_menu)
+                return ConversationHandler.END
+            else:
+                await updater.message.reply_text('Некорректный ввод, попробуйте ещё раз, цифру, букву, через пробел, '
+                                                 'в русской раскладке')
+                return 1
         else:
             await updater.message.reply_text('Некорректный ввод, попробуйте ещё раз, цифру, букву, через пробел, '
                                              'в русской раскладке')
@@ -129,6 +134,7 @@ async def getting_date(updater, context):  # Function to get date and to ask sub
             string_date = updater.message.text.split('.')
             if len(string_date) != 3:
                 raise Exception
+            print(string_date)
             new_date = dt.date(int(string_date[2]), int(string_date[1]), int(string_date[0]))
             homework.date = (int(string_date[0]), int(string_date[1]), int(string_date[2]))
 
@@ -144,12 +150,13 @@ async def getting_date(updater, context):  # Function to get date and to ask sub
             await updater.message.reply_text('Выходной, введите другую дату')
             return 2
         else:
-            lessons = data[int(new_date.weekday())]
+            lessons = data[str(homework.class_of_user)][homework.letter_of_class][str(new_date.weekday() + 1)]
+            print(lessons)
             await updater.message.reply_text('Отлично, теперь выберите урок на который запланировано дз',
                                              reply_markup=ReplyKeyboardMarkup(lessons))
             return 3
     except Exception as e:
-        print(e)
+        print(e, )
         await updater.message.reply_text('Некорректная дата')
         await updater.message.reply_text('Попробуйте ещё раз')
         return 2
@@ -159,10 +166,15 @@ async def class_asking_in_dialog(updater, context):
     # Getting class of user and rewrite if needed
     try:
         user_class = updater.message.text.split()
-        if user_class[0] in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] and user_class[1].lower() in 'абвм':
-            await updater.message.reply_text('Нажмите продолжить', reply_markup=markup_next)
-            homework.class_of_user, homework.letter_of_class = user_class[0], user_class[1]
-            return 2
+        if user_class[0] in data.keys():
+            if user_class[1] in data[user_class[0]]:
+                await updater.message.reply_text('Нажмите продолжить', reply_markup=markup_next)
+                homework.class_of_user, homework.letter_of_class = user_class[0], user_class[1]
+                return 2
+            else:
+                await updater.message.reply_text('Некорректный ввод, попробуйте ещё раз, цифру, букву, через пробел, '
+                                                 'в русской раскладке')
+                return 1
         else:
             await updater.message.reply_text('Некорректный ввод, попробуйте ещё раз, цифру, букву, через пробел, '
                                              'в русской раскладке')
@@ -226,7 +238,7 @@ async def getting_date_to_get(updater, context):  # Function to get date and to 
             await updater.message.reply_text('Выходной, введите другую дату')
             return 2
         else:
-            lessons = data[int(new_date.weekday())]
+            lessons = data[str(homework.class_of_user)][homework.letter_of_class][str(new_date.weekday() + 1)]
             await updater.message.reply_text('Отлично, теперь выберите урок на который запланировано дз',
                                              reply_markup=ReplyKeyboardMarkup(lessons))
             return 3
@@ -246,7 +258,6 @@ async def asking_subject_to_get(updater, context):  # Function to get subject an
         and class = ? and letter_of_class = ? and subject = ?''', (homework.date[0], homework.date[1],
                                                                    homework.date[2], homework.class_of_user,
                                                                    homework.letter_of_class, homework.subject)).fetchone()
-        print(downloaded_homework)
         if downloaded_homework is None:
             raise NoHomeworkError
         await updater.message.reply_text(downloaded_homework[0], reply_markup=markup_menu)
@@ -262,10 +273,15 @@ async def asking_subject_to_get(updater, context):  # Function to get subject an
 def initialization():  # Starting function
     # opening txt form
     global data
-    file = open('data.txt', mode='rt', encoding='utf-8')
-    data = list(map(lambda x: x.strip().split(', '), file.readlines()))
-    for i, day in enumerate(data):
-        data[i] = list(map(lambda x: [KeyboardButton(x)], data[i]))
+    with open('9_classes.json', encoding='utf-8') as json_file:
+        data = json.load(json_file)
+    with open('9_classes.json', encoding='utf-8') as json_file:
+        data = json.load(json_file)[0]
+    for clas in data.keys():
+        for key in data[clas].keys():
+            for day in data[clas][key].keys():
+                data[clas][key][day] = list(map(lambda x: [KeyboardButton(x)], data[clas][key][day]))
+
 
     # Making an application of Telegram-bot
     application = Application.builder().token(BOT_TOKEN).build()
