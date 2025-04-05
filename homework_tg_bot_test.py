@@ -20,10 +20,10 @@ data = []
 
 markup_menu = ReplyKeyboardMarkup(keyboard_for_menu)
 
-stop_button = [['/stop']]
+stop_button = [[KeyboardButton('/stop')]]
 markup_stop = ReplyKeyboardMarkup(stop_button)
 
-next_button = [['Продолжить']]
+next_button = [[KeyboardButton('Продолжить')], [KeyboardButton('/stop')]]
 markup_next = ReplyKeyboardMarkup(next_button)
 
 # database connection
@@ -37,6 +37,12 @@ class ActiveHomework:
         self.date = ()
         self.subject = ''
         self.class_of_user = 0
+        self.letter_of_class = ''
+
+
+class ChangingInformation:
+    def __init__(self):
+        self.class_of_user = ''
         self.letter_of_class = ''
 
 
@@ -76,30 +82,46 @@ async def start(updater, context):
         await error(updater, context, e)
 
 
-async def change(updater, context):
-    await updater.message.reply_text('Чтобы сменить класс напиши цифру класса и букву класса через пробел',
-                                     reply_markup=markup_stop)
-    return 1
+async def change_class(updater, context):
+    try:
+        classes = list(map(lambda x: [KeyboardButton(x)], data.keys())) + [[KeyboardButton('/stop')]]
+        numbers_of_class_markup = ReplyKeyboardMarkup(classes)
+        await updater.message.reply_text('Чтобы сменить класс нажмите на нужную цифру класса',
+                                         reply_markup=numbers_of_class_markup)
+        return 2
+    except Exception as e:
+        await error(updater, context, e)
+
+
+async def change_letter_of_class(updater, context):
+    try:
+        if updater.message.text in data.keys():
+            info.class_of_user = updater.message.text
+            classes = list(map(lambda x: [KeyboardButton(x)], data[info.class_of_user].keys())) + [[KeyboardButton('/stop')]]
+            letters_of_class_markup = ReplyKeyboardMarkup(classes)
+            await updater.message.reply_text('Нажмите на нужную букву класса',
+                                             reply_markup=letters_of_class_markup)
+            return 1
+        else:
+            await updater.message.reply_text('Нет такого класса, попробуйте заново')
+            return 2
+    except Exception as e:
+        await error(updater, context, e)
 
 
 async def class_asking(updater, context):
     # Getting class of user and rewrite if needed
     try:
-        user_class = updater.message.text.split()
-        if user_class[0] in data.keys():
-            if user_class[1] in data[user_class[0]]:
-                cursor.execute('''UPDATE users SET (class, letter_of_class) = (?, ?) WHERE telegram_id = ?''',
-                               (user_class[0], user_class[1].lower(), updater.message.chat.id))
-                connection.commit()
-                await updater.message.reply_text(f'Класс изменён на {user_class[0]} {user_class[1]}', reply_markup=markup_menu)
-                return ConversationHandler.END
-            else:
-                await updater.message.reply_text('Некорректный ввод, попробуйте ещё раз, цифру, букву, через пробел, '
-                                                 'в русской раскладке')
-                return 1
+        if updater.message.text in data[info.class_of_user].keys():
+            info.letter_of_class = updater.message.text
+            cursor.execute('''UPDATE users SET (class, letter_of_class) = (?, ?) WHERE telegram_id = ?''',
+                           (int(info.class_of_user), info.letter_of_class, updater.message.chat.id))
+            connection.commit()
+            await updater.message.reply_text(f'Класс изменён на {info.class_of_user} {info.letter_of_class}',
+                                             reply_markup=markup_menu)
+            return ConversationHandler.END
         else:
-            await updater.message.reply_text('Некорректный ввод, попробуйте ещё раз, цифру, букву, через пробел, '
-                                             'в русской раскладке')
+            await updater.message.reply_text('Нет такой буквы класса')
             return 1
     except Exception as e:
         await error(updater, context, e)
@@ -134,7 +156,6 @@ async def getting_date(updater, context):  # Function to get date and to ask sub
             string_date = updater.message.text.split('.')
             if len(string_date) != 3:
                 raise Exception
-            print(string_date)
             new_date = dt.date(int(string_date[2]), int(string_date[1]), int(string_date[0]))
             homework.date = (int(string_date[0]), int(string_date[1]), int(string_date[2]))
 
@@ -150,8 +171,8 @@ async def getting_date(updater, context):  # Function to get date and to ask sub
             await updater.message.reply_text('Выходной, введите другую дату')
             return 2
         else:
-            lessons = data[str(homework.class_of_user)][homework.letter_of_class][str(new_date.weekday() + 1)]
-            print(lessons)
+            lessons = (data[str(homework.class_of_user)][homework.letter_of_class][str(new_date.weekday() + 1)] +
+                       [['/stop']])
             await updater.message.reply_text('Отлично, теперь выберите урок на который запланировано дз',
                                              reply_markup=ReplyKeyboardMarkup(lessons))
             return 3
@@ -238,7 +259,8 @@ async def getting_date_to_get(updater, context):  # Function to get date and to 
             await updater.message.reply_text('Выходной, введите другую дату')
             return 2
         else:
-            lessons = data[str(homework.class_of_user)][homework.letter_of_class][str(new_date.weekday() + 1)]
+            lessons = (data[str(homework.class_of_user)][homework.letter_of_class][str(new_date.weekday() + 1)] +
+                       [['/stop']])
             await updater.message.reply_text('Отлично, теперь выберите урок на который запланировано дз',
                                              reply_markup=ReplyKeyboardMarkup(lessons))
             return 3
@@ -282,14 +304,14 @@ def initialization():  # Starting function
             for day in data[clas][key].keys():
                 data[clas][key][day] = list(map(lambda x: [KeyboardButton(x)], data[clas][key][day]))
 
-
     # Making an application of Telegram-bot
     application = Application.builder().token(BOT_TOKEN).build()
 
     # A handler for asking user about his class
     entry_or_change_class_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start), CommandHandler('change', change)],
-        states={1: [MessageHandler(filters.TEXT & ~filters.COMMAND, class_asking)]},
+        entry_points=[CommandHandler('start', start), CommandHandler('change', change_class)],
+        states={1: [MessageHandler(filters.TEXT & ~filters.COMMAND, class_asking)],
+                2: [MessageHandler(filters.TEXT & ~filters.COMMAND, change_letter_of_class)]},
         fallbacks=[CommandHandler('stop', stop)]
     )
 
@@ -326,4 +348,5 @@ def initialization():  # Starting function
 
 if __name__ == '__main__':
     homework = ActiveHomework()
+    info = ChangingInformation()
     initialization()
