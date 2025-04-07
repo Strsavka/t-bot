@@ -2,11 +2,11 @@ import logging
 import json
 import sqlite3
 import datetime as dt
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
+from telegram import ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, ConversationHandler
 
 # TOKEN for Telegram-bot is necessary
-BOT_TOKEN = '7596957066:AAH5kPuJH1823dvaoIbaEYB7T79Y9oP-P78'
+BOT_TOKEN = '7709651633:AAFaD57pRleeEFFqQcx4gHeNQUlqEqvJ7dk'
 
 # logging in
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 # mark_ups making
 keyboard_for_menu = [[KeyboardButton('/get'), KeyboardButton('/send')],
-                     [KeyboardButton('Инструктаж'), KeyboardButton('/change')]]
+                     [KeyboardButton('Инструктаж'), KeyboardButton('/change')],
+                     [KeyboardButton('/start')]]
 
 data = []
 
@@ -56,6 +57,7 @@ async def text_answer(updater, context):
         await updater.message.reply_text('Отправьте команду /send для того чтобы отправить домашнее задание')
         await updater.message.reply_text('Отправьте команду /change для того чтобы сменить свой класс')
         await updater.message.reply_text('Команда /stop прервёт любую операцию')
+        await updater.message.reply_text('Команда /start перезапустит бота')
     else:
         await updater.message.reply_text('Запрос не принят')
 
@@ -72,9 +74,11 @@ async def start(updater, context):
             connection.commit()
             await updater.message.reply_text(f'Привет {first_name}! Я телеграм-бот, работающий на ГБОУ'
                                              f' УР Лицей №41, предназначен для помощи лицеистам получать домашнее задание')
-            await updater.message.reply_text(f'Чтобы было проще сразу скажи в каком классе ты учишься, напиши цифру класса '
-                                             f'и букву через пробел', reply_markup=markup_stop)
-            return 1
+            classes = list(map(lambda x: [KeyboardButton(x)], data.keys())) + [[KeyboardButton('/stop')]]
+            numbers_of_class_markup = ReplyKeyboardMarkup(classes)
+            await updater.message.reply_text(f'Чтобы было проще сразу выбери класс в котором ты учишься',
+                                             reply_markup=numbers_of_class_markup)
+            return 2
         else:
             await updater.message.reply_text(f'Привет {first_name}, похоже ты у нас уже был, если ты забыл как '
                                              f'работать со мной то просто вызови инструкцию', reply_markup=markup_menu)
@@ -274,18 +278,17 @@ async def getting_date_to_get(updater, context):  # Function to get date and to 
 async def asking_subject_to_get(updater, context):  # Function to get subject and to download homework and to send it
     try:
         homework.subject = updater.message.text
-        print(homework.date[0], homework.date[1], homework.date[2], homework.class_of_user, homework.letter_of_class,
-              homework.subject)
         downloaded_homework = cursor.execute('''SELECT homework FROM homework WHERE date = ? and month = ? and year = ? 
         and class = ? and letter_of_class = ? and subject = ?''', (homework.date[0], homework.date[1],
                                                                    homework.date[2], homework.class_of_user,
-                                                                   homework.letter_of_class, homework.subject)).fetchone()
-        if downloaded_homework is None:
+                                                                   homework.letter_of_class, homework.subject)).fetchall()
+        if not bool(downloaded_homework):
             raise NoHomeworkError
-        await updater.message.reply_text(downloaded_homework[0], reply_markup=markup_menu)
+        for task in downloaded_homework:
+            await updater.message.reply_text(task[0], reply_markup=markup_menu)
         return ConversationHandler.END
     except NoHomeworkError:
-        await updater.message.reply_text('Дз нет', reply_markup=markup_menu)
+        await updater.message.reply_text('Дз не отправлено', reply_markup=markup_menu)
         return ConversationHandler.END
     except Exception as e:
         await error(updater, context, e)
