@@ -27,6 +27,8 @@ markup_stop = ReplyKeyboardMarkup(stop_button)
 next_button = [[KeyboardButton('Продолжить')], [KeyboardButton('/stop')]]
 markup_next = ReplyKeyboardMarkup(next_button)
 
+banned_persons = ['1796307220']
+
 # database connection
 connection = sqlite3.connect("homework_database.sqlite")
 cursor = connection.cursor()
@@ -145,6 +147,9 @@ async def error(updater, context, mistake):
 
 async def send(updater, context):
     # Command function to start uploading_homework_handler
+    if str(updater.message.chat.id) in banned_persons:
+        await updater.message.reply_text('Автор запретил вам пользоваться функцией отправки')
+        return ConversationHandler.END
     await updater.message.reply_text('Напишите на какое число вы бы хотели отправить дз', reply_markup=markup_stop)
     await updater.message.reply_text('Пишите через дату в формате ДД.ММ.ГГГГ')
     homework.date = None
@@ -220,10 +225,10 @@ async def asking_subject(updater, context):  # Function to get subject and to as
 async def asking_homework(updater, context):  # Function to get homework and to upload it
     try:
         homework.homework = updater.message.text
-        cursor.execute('''INSERT INTO homework(homework, date, month, year, subject, class, letter_of_class) 
-                             VALUES(?, ?, ?, ?, ?, ?, ?)''', (homework.homework, homework.date[0], homework.date[1],
+        cursor.execute('''INSERT INTO homework(homework, date, month, year, subject, class, letter_of_class, sender) 
+                             VALUES(?, ?, ?, ?, ?, ?, ?, ?)''', (homework.homework, homework.date[0], homework.date[1],
                                                               homework.date[2], homework.subject, homework.class_of_user,
-                                                              homework.letter_of_class))
+                                                              homework.letter_of_class, updater.message.chat.id))
         connection.commit()
         await updater.message.reply_text('Домашнее задание отправлено', reply_markup=markup_menu)
         return ConversationHandler.END
