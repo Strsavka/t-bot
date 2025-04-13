@@ -27,8 +27,6 @@ markup_stop = ReplyKeyboardMarkup(stop_button)
 next_button = [[KeyboardButton('Продолжить')], [KeyboardButton('/stop')]]
 markup_next = ReplyKeyboardMarkup(next_button)
 
-banned_persons = ['1796307220']
-
 # database connection
 connection = sqlite3.connect("homework_database.sqlite")
 cursor = connection.cursor()
@@ -145,27 +143,29 @@ async def error(updater, context, mistake):
     print(mistake)
 
 
-async def ban(updater, context):
-    try:
-        if updater.message.text in list(map(lambda x: str(x[0]), cursor.execute('''SELECT telegram_id FROM users''').fetchall())):
-            cursor.execute('''UPDATE users SET banned_or_no = 'banned' WHERE telegram_id = ?''', (updater.message.text,))
-            connection.commit()
-            await updater.message.reply_text('Операция успешно выполнена', reply_markup=markup_menu)
-            return ConversationHandler.END
-    except Exception as e:
-        await error(updater, context, e)
-
-
 async def asking_for_ban(updater, context):
     try:
         if str(updater.message.chat.id) == '1986406020':
             users = cursor.execute('''SELECT telegram_id FROM users''').fetchall()
             users = list(map(lambda x: [KeyboardButton(str(x[0]))], users)) + [[KeyboardButton('/stop')]]
             user_markup = ReplyKeyboardMarkup(users)
-            await updater.message.reply_text('Выберите пользователя', reply_markup=user_markup)
+            await updater.message.reply_text('Выберите пользователя для бана', reply_markup=user_markup)
             return 1
         else:
             await updater.message.reply_text('Запрещено в использовании')
+            return ConversationHandler.END
+    except Exception as e:
+        await error(updater, context, e)
+
+
+async def ban(updater, context):
+    try:
+        if updater.message.text in list(map(lambda x: str(x[0]),
+                                            cursor.execute('''SELECT telegram_id FROM users''').fetchall())):
+            cursor.execute('''UPDATE users SET banned_or_no = 'banned' WHERE telegram_id = ?''',
+                           (updater.message.text,))
+            connection.commit()
+            await updater.message.reply_text('Операция успешно выполнена', reply_markup=markup_menu)
             return ConversationHandler.END
     except Exception as e:
         await error(updater, context, e)
@@ -177,6 +177,34 @@ async def print_users(updater, context):
             all_users = cursor.execute('''SELECT * FROM users''').fetchall()
             for user in all_users:
                 await updater.message.reply_text(user)
+    except Exception as e:
+        await error(updater, context, e)
+
+
+async def asking_for_unban(updater, context):
+    try:
+        if str(updater.message.chat.id) == '1986406020':
+            users = cursor.execute('''SELECT telegram_id FROM users''').fetchall()
+            users = list(map(lambda x: [KeyboardButton(str(x[0]))], users)) + [[KeyboardButton('/stop')]]
+            user_markup = ReplyKeyboardMarkup(users)
+            await updater.message.reply_text('Выберите пользователя для разбана', reply_markup=user_markup)
+            return 1
+        else:
+            await updater.message.reply_text('Запрещено в использовании')
+            return ConversationHandler.END
+    except Exception as e:
+        await error(updater, context, e)
+
+
+async def unban(updater, context):
+    try:
+        if updater.message.text in list(map(lambda x: str(x[0]),
+                                            cursor.execute('''SELECT telegram_id FROM users''').fetchall())):
+            cursor.execute('''UPDATE users SET banned_or_no = 'clear' WHERE telegram_id = ?''',
+                           (updater.message.text,))
+            connection.commit()
+            await updater.message.reply_text('Операция успешно выполнена', reply_markup=markup_menu)
+            return ConversationHandler.END
     except Exception as e:
         await error(updater, context, e)
 
@@ -254,6 +282,11 @@ async def class_asking_in_dialog(updater, context):
 
 async def asking_subject(updater, context):  # Function to get subject and to ask for homework
     try:
+        new_date = dt.date(homework.date[2], homework.date[1], homework.date[0])
+        list_of_lessons = list(map(lambda x: x[0].text, data[str(homework.class_of_user)][homework.letter_of_class][str(new_date.weekday() + 1)]))
+        if updater.message.text.strip() not in list_of_lessons:
+            await updater.message.reply_text('Нет такого урока на этот день')
+            return 3
         await updater.message.reply_text('Отправьте дз', reply_markup=markup_stop)
         homework.subject = updater.message.text
         return 4
@@ -321,6 +354,12 @@ async def getting_date_to_get(updater, context):  # Function to get date and to 
 
 async def asking_subject_to_get(updater, context):  # Function to get subject and to download homework and to send it
     try:
+        new_date = dt.date(homework.date[2], homework.date[1], homework.date[0])
+        list_of_lessons = list(map(lambda x: x[0].text, data[str(homework.class_of_user)][homework.letter_of_class][
+            str(new_date.weekday() + 1)]))
+        if updater.message.text.strip() not in list_of_lessons:
+            await updater.message.reply_text('Нет такого урока на этот день')
+            return 3
         homework.subject = updater.message.text
         downloaded_homework = cursor.execute('''SELECT homework FROM homework WHERE date = ? and month = ? and year = ? 
         and class = ? and letter_of_class = ? and subject = ?''', (homework.date[0], homework.date[1],
@@ -381,11 +420,22 @@ def initialization():  # Starting function
         fallbacks=[CommandHandler('stop', stop)]
     )
 
+    # A handler for banning people
     ban_function_handler = ConversationHandler(
         entry_points=[CommandHandler('ban', asking_for_ban)],
         states={1: [MessageHandler(filters.TEXT & ~filters.COMMAND, ban)]},
         fallbacks=[CommandHandler('stop', stop)]
     )
+
+    # A handler for unbanning people
+    unban_function_handler = ConversationHandler(
+        entry_points=[CommandHandler('unban', asking_for_unban)],
+        states={1: [MessageHandler(filters.TEXT & ~filters.COMMAND, unban)]},
+        fallbacks=[CommandHandler('stop', stop)]
+    )
+
+    # A handler for printing all users database
+    printing_database_handler = CommandHandler('database', print_users)
 
     # A handler for text messages out dialogs
     text_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, text_answer)
@@ -396,6 +446,8 @@ def initialization():  # Starting function
     application.add_handler(uploading_homework_handler)
     application.add_handler(downloading_homework_handler)
     application.add_handler(ban_function_handler)
+    application.add_handler(unban_function_handler)
+    application.add_handler(printing_database_handler)
     application.add_handler(text_handler)
     application.run_polling()
 
